@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piyami LifeOS Otonom Terminal</title>
+    <style>
+        body { font-family: sans-serif; background: #0b0e11; color: #e9eaeb; margin: 0; padding: 10px; }
+        .dashboard { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 600px; margin: auto; }
+        .panel { background: #1e2329; border-radius: 10px; padding: 15px; border: 1px solid #333; }
+        .radar-box { border-left: 4px solid #f0b90b; background: #2b2f36; padding: 10px; margin-bottom: 10px; }
+        .strategy-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 10px; }
+        .strat-card { background: #000; padding: 8px; border-radius: 5px; font-size: 0.7rem; text-align: center; cursor: pointer; border: 1px solid #444; }
+        .strat-card:hover { border-color: #f0b90b; }
+        .active-trade { border: 2px solid #27ae60; background: #0c2d1a; margin-top: 10px; display: none; }
+        .radar-active { animation: blink 1s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        button { width: 100%; padding: 12px; background: #f0b90b; color: #000; border: none; border-radius: 5px; font-weight: bold; margin-top: 10px; }
+        textarea { width: 100%; background: #2b2f36; color: #fff; border: 1px solid #444; border-radius: 5px; margin-top: 10px; padding: 5px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <div class="panel">
+            <h2 style="color:#f0b90b; margin:0;">🛰️ PİYAMİ RADAR</h2>
+            <div id="globalStatus" style="font-size: 0.8rem; margin: 10px 0; color: #999;">Radar taranıyor...</div>
+            <div id="radarElements" class="radar-box">Aktif risk taraması bekleniyor...</div>
+        </div>
+
+        <div class="panel">
+            <h3 style="margin:0;">🎯 OTONOM VARYANTLAR</h3>
+            <div class="strategy-grid">
+                <div class="strat-card" onclick="selectStrat('scalp')"><b>SCALP</b><br><span id="sc_pair">-</span></div>
+                <div class="strat-card" onclick="selectStrat('day')"><b>GÜNLÜK</b><br><span id="dy_pair">-</span></div>
+                <div class="strat-card" onclick="selectStrat('swing')"><b>HAFTALIK</b><br><span id="sw_pair">-</span></div>
+            </div>
+        </div>
+
+        <div id="activeTradePanel" class="panel active-trade">
+            <h3 style="margin:0; color:#27ae60;">⚡ AKTİF PUSU</h3>
+            <div id="tradeDetails" style="font-family: monospace; font-size: 1.1rem; margin-top:10px;"></div>
+            <div id="priceAlert" style="color:#f0b90b; font-weight:bold; margin-top:10px;"></div>
+        </div>
+
+        <textarea id="question" placeholder="Piyami Bey, yeni bir operasyon emri verin..."></textarea>
+        <button id="mainBtn" onclick="runOtonom()">OPERASYONU BAŞLAT</button>
+    </div>
+
+    <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"></audio>
+
+    <script>
+        let allData = {};
+        let activeTargetPrice = null;
+
+        async function runOtonom() {
+            const q = document.getElementById('question').value;
+            const btn = document.getElementById('mainBtn');
+            btn.innerText = "ARAŞTIRILIYOR...";
+            
+            try {
+                const res = await fetch('/api/gemini-ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: q })
+                });
+                allData = await res.json();
+
+                // 1. Radar ve Global Durum
+                document.getElementById('globalStatus').innerText = allData.global_status;
+                document.getElementById('radarElements').innerHTML = allData.radar_elements.map(e => `<li>${e}</li>`).join('');
+                document.getElementById('radarElements').classList.add('radar-active');
+
+                // 2. Varyantları Doldur
+                document.getElementById('sc_pair').innerText = allData.strategies.scalp.pair;
+                document.getElementById('dy_pair').innerText = allData.strategies.day.pair;
+                document.getElementById('sw_pair').innerText = allData.strategies.swing.pair;
+
+                btn.innerText = "RADAR AKTİF";
+            } catch (e) { alert("Hata: " + e.message); }
+        }
+
+        function selectStrat(type) {
+            const s = allData.strategies[type];
+            const panel = document.getElementById('activeTradePanel');
+            const details = document.getElementById('tradeDetails');
+            
+            panel.style.display = 'block';
+            activeTargetPrice = s.price;
+            
+            details.innerHTML = `
+                ${s.pair} | ${s.action}<br>
+                GİRİŞ: ${s.price}<br>
+                HEDEF: ${s.tp}<br>
+                STOP: ${s.sl}
+            `;
+            
+            // Otonom döngüyü başlat
+            startGozcuDöngüsü(s.pair, s.price);
+        }
+
+        function startGozcuDöngüsü(pair, target) {
+            document.getElementById('priceAlert').innerText = "Gözcü pusuda, fiyat bekleniyor...";
+            
+            // Bu kısım gerçek veriye bağlandığında tetiklenir
+            // Simülasyon: 10 saniye sonra uyarı ver
+            setTimeout(() => {
+                document.getElementById('alertSound').play();
+                document.getElementById('priceAlert').innerHTML = "🚨 UYAN KOMUTANIM! <br> Fiyat pusu seviyesine geldi!";
+                document.body.style.background = "#400";
+                setTimeout(() => document.body.style.background = "#0b0e11", 2000);
+            }, 10000);
+        }
+    </script>
+</body>
+</html>
