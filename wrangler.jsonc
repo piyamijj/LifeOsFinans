@@ -1,0 +1,9 @@
+{
+  "name": "lifeos-finans",
+  "compatibility_date": "2026-02-05",
+  "main": "_worker.js",
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS"
+  }
+}
