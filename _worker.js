@@ -36,7 +36,7 @@ export default {
       // Gemini'ye Gönderilen Paket
       const prompt = `Altın fiyatı: ${currentPrice}. Kısa teknik analiz yap ve JSON formatında dön. Şema: {"globalStatus": "...", "radarElements": ["..."], "strategies": {"scalp": {"pair": "XAU/USD", "action": "...", "price": "${currentPrice}", "tp": "...", "sl": "..."}}}`;
 
-      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`, {
+      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${env.GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
