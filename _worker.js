@@ -45,7 +45,7 @@ export default {
         }
       }`;
 
-      const gRes = await fetch(`https://generativelanguage.googleapis.com{env.GEMINI_API_KEY}`, {
+      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
