@@ -6,51 +6,69 @@ export default {
       "Access-Control-Allow-Headers": "Content-Type",
     };
 
+    // Tarayıcı güvenliği için OPTIONS isteği gereklidir
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
-      // 1. OANDA'DAN CANLI VERİ OPERASYONU
-      const OANDA_URL = "https://api-fxpractice.oanda.com/v3";
+      // 1. OANDA VERİ ÇEKME (Hata Toleranslı)
+      const OANDA_URL = "https://api-fxpractice.oanda.com";
       const pairs = ["XAU_USD", "EUR_USD", "USD_TRY"];
       let marketSnapshot = "";
 
       for (const p of pairs) {
-        const res = await fetch(`${OANDA_URL}/instruments/${p}/candles?count=1&granularity=M15&price=M`, {
-          headers: { 'Authorization': `Bearer ${env.OANDA_API_KEY}` }
-        });
-        const d = await res.json();
-        if (d.candles) marketSnapshot += `${p}: ${d.candles[0].mid.c} | `;
+        try {
+          const res = await fetch(`${OANDA_URL}/instruments/${p}/candles?count=1&granularity=M15&price=M`, {
+            headers: { 'Authorization': `Bearer ${env.OANDA_API_KEY}` }
+          });
+          const d = await res.json();
+          // NOT: Dizi boşsa çökmesini engellemek için d.candles[0] yerine d.candles?.[0] kullanıldı
+          if (d.candles && d.candles.length > 0) {
+            marketSnapshot += `${p}: ${d.candles[0].mid.c} | `;
+          }
+        } catch (err) {
+          marketSnapshot += `${p}: Veri Alınamadı | `;
+        }
       }
 
-      // 2. GEMINI DERİN ANALİZ (Araştırmacı Yapı)
-      const prompt = `Sen Piyami'sin. Canlı veriler: ${marketSnapshot}. Teknik analiz yap ve strateji belirle. 
-      Lütfen SADECE JSON dön. Şema: { 
-        "globalStatus": "kısa özet", 
-        "radarElements": ["madde1", "madde2"], 
-        "strategies": { "scalp": {"pair": "...", "action": "...", "price": "...", "tp": "...", "sl": "..."}, "day": {...}, "swing": {...} } 
+      // 2. GEMINI PROMPT (Formatı Kesinleştirildi)
+      // Gemini'ye "Markdown kullanma" denildi, çünkü ```json ... ``` etiketleri JSON.parse'ı bozar.
+      const prompt = `Sen Piyami'sin. Canlı piyasa verileri: ${marketSnapshot}. 
+      Bu verileri teknik analiz süzgecinden geçir. 
+      CEVABIN SADECE JSON FORMATINDA OLSUN. ASLA AÇIKLAMA YAZMA. 
+      Şema: {
+        "globalStatus": "Piyasanın genel havası",
+        "radarElements": ["Madde 1", "Madde 2"],
+        "strategies": {
+          "scalp": {"pair": "...", "action": "...", "price": "...", "tp": "...", "sl": "..."},
+          "day": {"pair": "...", "action": "...", "price": "...", "tp": "...", "sl": "..."},
+          "swing": {"pair": "...", "action": "...", "price": "...", "tp": "...", "sl": "..."}
+        }
       }`;
 
-      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${env.GEMINI_API_KEY}`, {
+      const gRes = await fetch(`https://generativelanguage.googleapis.com{env.GEMINI_API_KEY}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
 
       const gData = await gRes.json();
-      let cleanJson = gData.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim();
-      const result = JSON.parse(cleanJson);
-
-      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      
+      // NOT: Gemini yanıtı bazen gData.candidates[0].content.parts[0].text içinde gönderir
+      let rawText = gData.candidates[0].content.parts[0].text;
+      
+      // JSON Temizleme Operasyonu (En kritik kısım!)
+      let cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+      
+      return new Response(cleanJson, { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      });
 
     } catch (e) {
-      // SİSTEM ÇÖKMESİN DİYE GÜVENLİ ÇIKIŞ
-      return new Response(JSON.stringify({
-        globalStatus: "OANDA/Gemini Hattında Gecikme",
-        radarElements: ["Hata: " + e.message, "Yeniden deneniyor..."],
-        strategies: {
-          scalp: { pair: "XAU/USD", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" },
-          day: { pair: "EUR/USD", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" },
-          swing: { pair: "USD/TRY", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" }
-        }
+      // Hata durumunda boş dönmek yerine anlamlı bir JSON döndürülür
+      return new Response(JSON.stringify({ 
+        globalStatus: "Sistem Hatası", 
+        radarElements: [e.message],
+        strategies: { scalp: {pair: "Hata"}, day: {pair: "Hata"}, swing: {pair: "Hata"} }
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
   }
