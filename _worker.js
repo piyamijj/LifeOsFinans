@@ -9,28 +9,49 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
     try {
-      // OANDA Veri Çekme Bölümü
+      // 1. OANDA'DAN CANLI VERİ OPERASYONU
       const OANDA_URL = "https://api-fxpractice.oanda.com/v3";
-      const resPrice = await fetch(`${OANDA_URL}/instruments/XAU_USD/candles?count=1&granularity=M15&price=M`, {
-        headers: { 'Authorization': `Bearer ${env.OANDA_API_KEY}` }
-      });
-      const priceData = await resPrice.json();
-      const currentPrice = priceData.candles ? priceData.candles[0].mid.c : "Bilinmiyor";
+      const pairs = ["XAU_USD", "EUR_USD", "USD_TRY"];
+      let marketSnapshot = "";
 
-      // Arayüze ve Gemini'ye gidecek yapı
-      const result = {
-        globalStatus: `Altın şu an ${currentPrice} seviyesinde. Radar aktif.`,
-        radarElements: ["Piyasa Volatilitesi: Normal", "Trend: Stabil", "Hacim: Orta"],
-        strategies: {
-          scalp: { pair: "XAU/USD", action: "BUY", price: currentPrice, tp: "2060", sl: "2040" },
-          day: { pair: "EUR/USD", action: "WAIT", price: "1.08", tp: "1.09", sl: "1.07" },
-          swing: { pair: "USD/TRY", action: "BEKLE", price: "43.54", tp: "45.00", sl: "42.50" }
-        }
-      };
+      for (const p of pairs) {
+        const res = await fetch(`${OANDA_URL}/instruments/${p}/candles?count=1&granularity=M15&price=M`, {
+          headers: { 'Authorization': `Bearer ${env.OANDA_API_KEY}` }
+        });
+        const d = await res.json();
+        if (d.candles) marketSnapshot += `${p}: ${d.candles[0].mid.c} | `;
+      }
+
+      // 2. GEMINI DERİN ANALİZ (Araştırmacı Yapı)
+      const prompt = `Sen Piyami'sin. Canlı veriler: ${marketSnapshot}. Teknik analiz yap ve strateji belirle. 
+      Lütfen SADECE JSON dön. Şema: { 
+        "globalStatus": "kısa özet", 
+        "radarElements": ["madde1", "madde2"], 
+        "strategies": { "scalp": {"pair": "...", "action": "...", "price": "...", "tp": "...", "sl": "..."}, "day": {...}, "swing": {...} } 
+      }`;
+
+      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`, {
+        method: 'POST',
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+
+      const gData = await gRes.json();
+      let cleanJson = gData.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const result = JSON.parse(cleanJson);
 
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
     } catch (e) {
-      return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+      // SİSTEM ÇÖKMESİN DİYE GÜVENLİ ÇIKIŞ
+      return new Response(JSON.stringify({
+        globalStatus: "OANDA/Gemini Hattında Gecikme",
+        radarElements: ["Hata: " + e.message, "Yeniden deneniyor..."],
+        strategies: {
+          scalp: { pair: "XAU/USD", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" },
+          day: { pair: "EUR/USD", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" },
+          swing: { pair: "USD/TRY", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" }
+        }
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
   }
 };
