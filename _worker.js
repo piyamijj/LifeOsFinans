@@ -8,32 +8,41 @@ export default {
 
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-    try {
-      // 1. OANDA'DAN CANLI VERİ OPERASYONU
-      const OANDA_URL = "https://api-fxpractice.oanda.com/v3";
-      const pairs = ["XAU_USD", "EUR_USD", "USD_TRY"];
-      let marketSnapshot = "";
+    let debugLog = [];
 
-      for (const p of pairs) {
-        const res = await fetch(`${OANDA_URL}/instruments/${p}/candles?count=1&granularity=M15&price=M`, {
-          headers: { 'Authorization': `Bearer ${env.OANDA_API_KEY}` }
-        });
-        const d = await res.json();
-        if (d.candles) marketSnapshot += `${p}: ${d.candles[0].mid.c} | `;
+    try {
+      debugLog.push("1. OANDA Operasyonu Başlıyor...");
+      const OANDA_URL = "https://api-fxpractice.oanda.com/v3";
+      
+      // OANDA Anahtar Kontrolü
+      if (!env.OANDA_API_KEY) throw new Error("OANDA_API_KEY Cloudflare panelinde tanımlanmamış!");
+
+      const resPrice = await fetch(`${OANDA_URL}/instruments/XAU_USD/candles?count=1&granularity=M15&price=M`, {
+        headers: { 'Authorization': `Bearer ${env.OANDA_API_KEY}` }
+      });
+
+      if (!resPrice.ok) {
+        const errorDetail = await resPrice.text();
+        throw new Error(`OANDA Hatası (${resPrice.status}): ${errorDetail}`);
       }
 
-      // 2. GEMINI DERİN ANALİZ (Araştırmacı Yapı)
-      const prompt = `Sen Piyami'sin. Canlı veriler: ${marketSnapshot}. Teknik analiz yap ve strateji belirle. 
-      Lütfen SADECE JSON dön. Şema: { 
-        "globalStatus": "kısa özet", 
-        "radarElements": ["madde1", "madde2"], 
-        "strategies": { "scalp": {"pair": "...", "action": "...", "price": "...", "tp": "...", "sl": "..."}, "day": {...}, "swing": {...} } 
-      }`;
+      const priceData = await resPrice.json();
+      const currentPrice = priceData.candles[0].mid.c;
+      debugLog.push(`2. Fiyat Alındı: ${currentPrice}`);
 
-      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${env.GEMINI_API_KEY}`, {
+      debugLog.push("3. Gemini Analizi Başlıyor...");
+      if (!env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY Cloudflare panelinde tanımlanmamış!");
+
+      // Gemini'ye Gönderilen Paket
+      const prompt = `Altın fiyatı: ${currentPrice}. Kısa teknik analiz yap ve JSON formatında dön. Şema: {"globalStatus": "...", "radarElements": ["..."], "strategies": {"scalp": {"pair": "XAU/USD", "action": "...", "price": "${currentPrice}", "tp": "...", "sl": "..."}}}`;
+
+      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
+
+      if (!gRes.ok) throw new Error(`Gemini Hatası: ${gRes.status}`);
 
       const gData = await gRes.json();
       let cleanJson = gData.candidates[0].content.parts[0].text.replace(/```json/g, "").replace(/```/g, "").trim();
@@ -42,14 +51,14 @@ export default {
       return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     } catch (e) {
-      // SİSTEM ÇÖKMESİN DİYE GÜVENLİ ÇIKIŞ
+      // Hata raporunu arayüze gönderiyoruz
       return new Response(JSON.stringify({
-        globalStatus: "OANDA/Gemini Hattında Gecikme",
-        radarElements: ["Hata: " + e.message, "Yeniden deneniyor..."],
+        globalStatus: "SİSTEM DURDURULDU",
+        radarElements: ["HATA RAPORU:", e.message, "İZLEME:", ...debugLog],
         strategies: {
-          scalp: { pair: "XAU/USD", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" },
-          day: { pair: "EUR/USD", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" },
-          swing: { pair: "USD/TRY", action: "YÜKLENİYOR", price: "0", tp: "0", sl: "0" }
+          scalp: { pair: "HATA", action: "KONTROL ET", price: "0", tp: "0", sl: "0" },
+          day: { pair: "HATA", action: "KONTROL ET", price: "0", tp: "0", sl: "0" },
+          swing: { pair: "HATA", action: "KONTROL ET", price: "0", tp: "0", sl: "0" }
         }
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
