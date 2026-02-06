@@ -30,7 +30,7 @@ export default {
         "strategies": { "scalp": {"pair": "...", "action": "...", "price": "...", "tp": "...", "sl": "..."}, "day": {...}, "swing": {...} } 
       }`;
 
-      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`, {
+      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${env.GEMINI_API_KEY}`, {
         method: 'POST',
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
